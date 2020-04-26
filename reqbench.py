@@ -34,7 +34,8 @@ class ReqBench(object):
         self.data = None
         self.json_data = None
         if method in _URL_METHODS:
-            self.url += '?' + urlencode(data)
+            if data:
+                self.url += '?' + urlencode(data)
         elif method in _DATA_METHODS:
             if json_data:
                 self.json_data = data
@@ -72,8 +73,8 @@ class ReqBench(object):
                 auth=self.auth,
                 headers=self.headers
                 ) as session:
-            async with session.request(**data) as response:
-                try:
+            try:
+                async with session.request(**data) as response:
                     resp_data = await response.read()
                     data_received = len(resp_data)
                     self.data_received += data_received
@@ -81,17 +82,17 @@ class ReqBench(object):
                         self.min_data_received = data_received
                     if not self.max_data_received or self.max_data_received < data_received:
                         self.max_data_received = data_received
-                except (ClientConnectionError, ClientResponseError):
-                    self.errors += 1
-                else:
-                    self.success += 1
-                finally:
-                    self.request_sent += 1
-                    duration = datetime.now() - start
-                    if not self.min_time_request or self.min_time_request > duration:
-                        self.min_time_request = duration
-                    if not self.max_time_request or self.max_time_request < duration:
-                        self.max_time_request = duration
+            except (ClientConnectionError, ClientResponseError):
+                self.errors += 1
+            else:
+                self.success += 1
+            finally:
+                self.request_sent += 1
+                duration = datetime.now() - start
+                if not self.min_time_request or self.min_time_request > duration:
+                    self.min_time_request = duration
+                if not self.max_time_request or self.max_time_request < duration:
+                    self.max_time_request = duration
 
     async def run_request_limit(self, limit):
         async with self.semaphore:
