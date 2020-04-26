@@ -30,14 +30,19 @@ def unique_strings(k: int, ntokens: int,
         add(token)
     return list(seen)
 
+def return_randon_json():
+    return web.json_response(
+        {'status': 1, 'data': unique_strings(random.randint(8, 64), 256, string.printable)}
+    )
+
 
 class SimpleJsonView(web.View):
 
     async def get(self):
-        return web.json_response({'status': 1, 'data': unique_strings(100, 4, string.printable)})
+        return return_randon_json()
 
     async def post(self):
-        return web.json_response({'status': 1, 'data': unique_strings(100, 4, string.printable)})
+        return return_randon_json()
 
 
 async def app_factory():

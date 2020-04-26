@@ -27,6 +27,8 @@ class ReqBench(object):
             headers: dict = None):
         self.url = url
         self.method = method
+        self.data = None
+        self.json_data = None
         if method in _URL_METHODS:
             self.url += '?' + urlencode(data)
         elif method in _DATA_METHODS:
