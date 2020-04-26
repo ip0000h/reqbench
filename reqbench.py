@@ -14,6 +14,10 @@ _URL_METHODS = ['GET', 'DELETE', 'OPTIONS', 'HEAD']
 _DATA_METHODS = ['POST', 'PUT']
 
 
+class GracefulExit(SystemExit):
+    code = 1
+
+
 class ReqBench(object):
 
     def __init__(
@@ -48,6 +52,7 @@ class ReqBench(object):
         self.errors = 0
         self.auth = BasicAuth(*auth.split(':')) if auth else None
         self.headers = headers
+        self.semaphore = asyncio.Semaphore(concurrency + 1)
 
     @property
     def running_time(self) -> timedelta:
@@ -89,14 +94,16 @@ class ReqBench(object):
                         self.max_time_request = duration
 
     async def run_request_limit(self, limit):
-        while self.request_sent < limit:
-            tasks = [self._request() for _ in range(self.concurrency)]
-            await asyncio.gather(*tasks)
+        async with self.semaphore:
+            while self.request_sent < limit:
+                tasks = [self._request() for _ in range(self.concurrency)]
+                await asyncio.gather(*tasks)
 
     async def run_duration_time(self, duration_time):
-        while self.running_time.seconds < duration_time:
-            tasks = [self._request() for _ in range(self.concurrency)]
-            await asyncio.gather(*tasks)
+        async with self.semaphore:
+            while self.running_time.seconds < duration_time:
+                tasks = [self._request() for _ in range(self.concurrency)]
+                await asyncio.gather(*tasks)
 
     def show_interrupt_message(self):
         print('Tasks was interrupted by user')
@@ -146,12 +153,20 @@ if __name__ == "__main__":
             headers=dict((h.split(':') for h in args.headers)) if args.headers else None,
         )
         if args.limit:
-            task = reqbench.run_request_limit(args.limit)
+            task = loop.create_task(reqbench.run_request_limit(args.limit))
         else:
-            task = reqbench.run_duration_time(args.duration)
+            task = loop.create_task(reqbench.run_duration_time(args.duration))
         loop.run_until_complete(task)
     except KeyboardInterrupt:
         reqbench.show_interrupt_message()
+        task.cancel()
     finally:
+        try:
+            pending_tasks = [
+                task for task in asyncio.Task.all_tasks() if not task.done()
+            ]
+            loop.run_until_complete(asyncio.gather(*pending_tasks))
+        except asyncio.CancelledError:
+            pass
         reqbench.show_final_message()
         loop.close()

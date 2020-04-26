@@ -32,7 +32,7 @@ def unique_strings(k: int, ntokens: int,
 
 def return_randon_json():
     return web.json_response(
-        {'status': 1, 'data': unique_strings(random.randint(8, 64), 256, string.printable)}
+        {'status': 1, 'data': unique_strings(random.randint(8, 128), 256, string.printable)}
     )
 
 
