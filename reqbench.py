@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import asyncio
 import argparse
-import json
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -37,9 +36,8 @@ class ReqBench(object):
                 self.data = data
         self.concurrency = concurrency
         self.time_start = datetime.now()
-        # self.min_time_request = None
-        # self.max_time_request = None
-        # self.avg_time_request = None
+        self.min_time_request = None
+        self.max_time_request = None
         self.request_sent = 0
         self.data_received = 0
         self.min_data_received = None
@@ -54,6 +52,7 @@ class ReqBench(object):
         return datetime.now() - self.time_start
 
     async def _request(self):
+        start = datetime.now()
         data = {
             'method': self.method,
             'url': self.url
@@ -81,6 +80,11 @@ class ReqBench(object):
                     self.success += 1
                 finally:
                     self.request_sent += 1
+                    duration = datetime.now() - start
+                    if not self.min_time_request or self.min_time_request > duration:
+                        self.min_time_request = duration
+                    if not self.max_time_request or self.max_time_request < duration:
+                        self.max_time_request = duration
 
     async def run_request_limit(self, limit):
         while self.request_sent < limit:
@@ -101,6 +105,8 @@ class ReqBench(object):
         print(f'Request data length min: {self.min_data_received} bytes'
               f' max: {self.max_data_received} bytes'
               f' avg: {int(self.data_received / self.request_sent)} bytes')
+        print(f'Request duration time min: {str(self.min_time_request)}'
+              f' max: {self.max_time_request}')
         print(f'Finished in {str(self.running_time)}')
 
 
