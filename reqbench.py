@@ -101,17 +101,11 @@ class ReqBench(object):
             if not self.max_time_request or self.max_time_request < duration:
                 self.max_time_request = duration
 
-    async def run_request_limit(self, limit: int):
+    async def run(self, limit: int = None, time: int = None):
         async with self.semaphore:
             async with ClientSession(auth=self.auth, headers=self.headers) as session:
-                while self.request_sent < limit:
-                    tasks = [self._request(session) for _ in range(self.concurrency)]
-                    await asyncio.gather(*tasks)
-
-    async def run_duration_time(self, duration_time: int):
-        async with self.semaphore:
-            async with ClientSession(auth=self.auth, headers=self.headers) as session:
-                while self.running_time.seconds < duration_time:
+                while (not limit or self.request_sent < limit) and \
+                      (not time or self.running_time.seconds < time):
                     tasks = [self._request(session) for _ in range(self.concurrency)]
                     await asyncio.gather(*tasks)
 
@@ -168,10 +162,7 @@ if __name__ == "__main__":
             auth=args.auth,
             headers=dict((h.split(':') for h in args.headers)) if args.headers else None,
         )
-        if args.limit:
-            task = loop.create_task(reqbench.run_request_limit(args.limit))
-        else:
-            task = loop.create_task(reqbench.run_duration_time(args.duration))
+        task = loop.create_task(reqbench.run(time=args.duration, limit=args.limit))
         loop.run_until_complete(task)
     except KeyboardInterrupt:
         reqbench.show_interrupt_message()
