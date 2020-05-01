@@ -3,6 +3,7 @@ import random
 
 from aiohttp import web
 
+
 def return_json_data():
     return web.json_response(
         {'status': 1, 'data': "A" * random.randint(1, 128) * 1024}

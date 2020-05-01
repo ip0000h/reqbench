@@ -66,6 +66,10 @@ class ReqBench(object):
     def running_time(self) -> timedelta:
         return datetime.now() - self.time_start
 
+    @property
+    def avg_data_received(self):
+        return int(self.data_received / self.request_sent)
+
     async def _request(self):
         start = datetime.now()
         data = {
@@ -117,15 +121,14 @@ class ReqBench(object):
         logger.info('Tasks was interrupted by user')
 
     def show_final_message(self):
-        logger.info(f'Requests sent: {self.request_sent}'
-              f' success: {self.success} errors: {self.errors}')
-        logger.info(f'Received data: {self.data_received} bytes.')
-        logger.info(f'Request data length min: {self.min_data_received} bytes'
-              f' max: {self.max_data_received} bytes'
-              f' avg: {int(self.data_received / self.request_sent)} bytes')
-        logger.info(f'Request duration time min: {str(self.min_time_request)}'
-              f' max: {self.max_time_request}')
-        logger.info(f'Finished in {str(self.running_time)}')
+        logger.info('Requests sent: %s success: %s errors: %s',
+                    self.request_sent, self.success, self.errors)
+        logger.info('Received data: %s bytes.', self.data_received)
+        logger.info('Request data length min: %s bytes max: %s bytes avg: %s bytes',
+                    self.min_data_received, self.max_data_received, self.avg_data_received)
+        logger.info('Request duration time min: %s max: %s',
+                    self.min_time_request, self.max_time_request)
+        logger.info('Finished in %s', self.running_time)
 
 
 if __name__ == "__main__":
