@@ -70,7 +70,7 @@ class ReqBench(object):
     def avg_data_received(self):
         return int(self.data_received / self.request_sent)
 
-    async def _request(self):
+    async def _request(self, session):
         start = datetime.now()
         data = {
             'method': self.method,
@@ -80,42 +80,40 @@ class ReqBench(object):
             data['data'] = data
         elif self.json_data:
             data['json_data'] = data
-        async with ClientSession(
-                auth=self.auth,
-                headers=self.headers
-                ) as session:
-            try:
-                async with session.request(**data) as response:
-                    resp_data = await response.read()
-                    data_received = len(resp_data)
-                    self.data_received += data_received
-                    if not self.min_data_received or self.min_data_received > data_received:
-                        self.min_data_received = data_received
-                    if not self.max_data_received or self.max_data_received < data_received:
-                        self.max_data_received = data_received
-            except (ClientConnectionError, ClientResponseError):
-                self.errors += 1
-            else:
-                self.success += 1
-            finally:
-                self.request_sent += 1
-                duration = datetime.now() - start
-                if not self.min_time_request or self.min_time_request > duration:
-                    self.min_time_request = duration
-                if not self.max_time_request or self.max_time_request < duration:
-                    self.max_time_request = duration
+        try:
+            async with session.request(**data) as response:
+                resp_data = await response.read()
+                data_received = len(resp_data)
+                self.data_received += data_received
+                if not self.min_data_received or self.min_data_received > data_received:
+                    self.min_data_received = data_received
+                if not self.max_data_received or self.max_data_received < data_received:
+                    self.max_data_received = data_received
+        except (ClientConnectionError, ClientResponseError):
+            self.errors += 1
+        else:
+            self.success += 1
+        finally:
+            self.request_sent += 1
+            duration = datetime.now() - start
+            if not self.min_time_request or self.min_time_request > duration:
+                self.min_time_request = duration
+            if not self.max_time_request or self.max_time_request < duration:
+                self.max_time_request = duration
 
     async def run_request_limit(self, limit: int):
         async with self.semaphore:
-            while self.request_sent < limit:
-                tasks = [self._request() for _ in range(self.concurrency)]
-                await asyncio.gather(*tasks)
+            async with ClientSession(auth=self.auth, headers=self.headers) as session:
+                while self.request_sent < limit:
+                    tasks = [self._request(session) for _ in range(self.concurrency)]
+                    await asyncio.gather(*tasks)
 
     async def run_duration_time(self, duration_time: int):
         async with self.semaphore:
-            while self.running_time.seconds < duration_time:
-                tasks = [self._request() for _ in range(self.concurrency)]
-                await asyncio.gather(*tasks)
+            async with ClientSession(auth=self.auth, headers=self.headers) as session:
+                while self.running_time.seconds < duration_time:
+                    tasks = [self._request(session) for _ in range(self.concurrency)]
+                    await asyncio.gather(*tasks)
 
     def show_interrupt_message(self):
         logger.info('Tasks was interrupted by user')
