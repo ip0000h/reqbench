@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import asyncio
 import argparse
+import logging
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -12,6 +13,12 @@ from aiohttp import (BasicAuth,
 
 _URL_METHODS = ['GET', 'DELETE', 'OPTIONS', 'HEAD']
 _DATA_METHODS = ['POST', 'PUT']
+_LOGGER_FORMAT = '%(asctime)s %(message)s'
+
+logging.basicConfig(format=_LOGGER_FORMAT, datefmt='[%H:%M:%S]')
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 class GracefulExit(SystemExit):
@@ -107,17 +114,18 @@ class ReqBench(object):
                 await asyncio.gather(*tasks)
 
     def show_interrupt_message(self):
-        print('Tasks was interrupted by user')
+        logger.info('Tasks was interrupted by user')
 
     def show_final_message(self):
-        print(f'Requests sent: {self.request_sent} success: {self.success} errors: {self.errors}')
-        print(f'Received data: {self.data_received} bytes.')
-        print(f'Request data length min: {self.min_data_received} bytes'
+        logger.info(f'Requests sent: {self.request_sent}'
+              f' success: {self.success} errors: {self.errors}')
+        logger.info(f'Received data: {self.data_received} bytes.')
+        logger.info(f'Request data length min: {self.min_data_received} bytes'
               f' max: {self.max_data_received} bytes'
               f' avg: {int(self.data_received / self.request_sent)} bytes')
-        print(f'Request duration time min: {str(self.min_time_request)}'
+        logger.info(f'Request duration time min: {str(self.min_time_request)}'
               f' max: {self.max_time_request}')
-        print(f'Finished in {str(self.running_time)}')
+        logger.info(f'Finished in {str(self.running_time)}')
 
 
 if __name__ == "__main__":
@@ -141,7 +149,13 @@ if __name__ == "__main__":
     group.add_argument('-l', '--limit', type=int, help='Limit of requests.')
     group.add_argument('-d', '--duration', type=int, help='Duration in seconds.')
 
+    parser.add_argument('-v', '--verbose', action='store_true', help='Detailed output.')
+
     args = parser.parse_args()
+
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+
     loop = asyncio.get_event_loop()
 
     try:
