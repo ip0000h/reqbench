@@ -101,13 +101,13 @@ class ReqBench(object):
                 if not self.max_time_request or self.max_time_request < duration:
                     self.max_time_request = duration
 
-    async def run_request_limit(self, limit):
+    async def run_request_limit(self, limit: int):
         async with self.semaphore:
             while self.request_sent < limit:
                 tasks = [self._request() for _ in range(self.concurrency)]
                 await asyncio.gather(*tasks)
 
-    async def run_duration_time(self, duration_time):
+    async def run_duration_time(self, duration_time: int):
         async with self.semaphore:
             while self.running_time.seconds < duration_time:
                 tasks = [self._request() for _ in range(self.concurrency)]
