@@ -6,7 +6,10 @@ from aiohttp import web
 
 def return_json_data():
     return web.json_response(
-        {'status': 1, 'data': "A" * random.randint(1, 128) * 1024}
+        {
+            'status': 1,
+            'data': "A" * random.randint(16, 1024) * 1024
+        }
     )
 
 
@@ -30,4 +33,4 @@ if __name__ == '__main__':
         level=logging.INFO,
         format='[%(asctime)s %(levelname)s] %(message)s'
     )
-    web.run_app(app_factory())
+    web.run_app(app_factory(), port=8000)
