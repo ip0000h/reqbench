@@ -11,12 +11,14 @@ from aiohttp import (BasicAuth,
                      ClientConnectionError,
                      ClientResponseError,
                      TCPConnector)
-from tqdm import tqdm
 
 
 _URL_METHODS = ['GET', 'DELETE', 'OPTIONS', 'HEAD']
 _DATA_METHODS = ['POST', 'PUT']
 _LOGGER_FORMAT = '%(asctime)s %(message)s'
+_DEFAULT_HEADERS = {
+    'User-Agent': 'reqbench'
+}
 
 logging.basicConfig(format=_LOGGER_FORMAT, datefmt='[%H:%M:%S]')
 
@@ -33,6 +35,19 @@ class UserException(Exception):
 
     def __str__(self):
         return f'{self.message}' \
+               + (f', params: {self.params}' if self.params else '')
+
+
+class RequestException(Exception):
+
+    def __init__(self, msg, status_code, params=None):
+        self.message = msg
+        self.status_code = status_code
+        self.params = params
+        super(RequestException, self).__init__(self)
+
+    def __str__(self):
+        return f'{self.status_code: self.message}' \
                + (f', params: {self.params}' if self.params else '')
 
 
@@ -56,6 +71,7 @@ class ReqBench(object):
         self.duration = duration
         self.data = None
         self.json_data = None
+        self.is_json_data = json_data
         if method in _URL_METHODS:
             if data:
                 self.url += '?' + urlencode(data)
@@ -64,6 +80,7 @@ class ReqBench(object):
                 self.json_data = data
             else:
                 self.data = data
+
         if file_name:
             self.file_obj = open(file_name, 'r')
         else:
@@ -79,11 +96,10 @@ class ReqBench(object):
         self.success = 0
         self.errors = 0
         self.auth = BasicAuth(*auth.split(':')) if auth else None
-        self.headers = headers
+        self.headers = _DEFAULT_HEADERS
+        if headers:
+            self.headers.update(headers)
         self.semaphore = asyncio.Semaphore(concurrency + 1)
-        # self.tqdm = tqdm(
-        #     total=limit or duration
-        # )
 
     @property
     def running_time(self) -> timedelta:
@@ -93,18 +109,25 @@ class ReqBench(object):
     def avg_data_received(self) -> int:
         return int(self.data_received / self.request_sent)
 
-    async def _request(self, session: ClientSession):
+    async def _request(self, session: ClientSession, data: dict):
         start = datetime.now()
-        data = {
+        rq_data = {
             'method': self.method,
             'url': self.url
         }
+        # TODO: just use param data
         if self.data:
-            data['data'] = data
+            rq_data['data'] = self.data
         elif self.json_data:
-            data['json_data'] = data
+            rq_data['json'] = self.json_data
+        elif data and not self.is_json_data:
+            rq_data['data'] = data
+        elif data and self.is_json_data:
+            rq_data['json'] = data
         try:
-            async with session.request(**data) as response:
+            async with session.request(**rq_data) as response:
+                if response.status >= 400:
+                    raise RequestException(response.status, 'Server error')
                 resp_data = await response.read()
                 data_received = len(resp_data)
                 self.data_received += data_received
@@ -124,6 +147,9 @@ class ReqBench(object):
             if not self.max_time_request or self.max_time_request < duration:
                 self.max_time_request = duration
 
+    def _get_data_from_file(self):
+        return dict([i.split(':') for i in next(self.file_obj).rstrip().split(' ')])
+
     async def run(self):
         connector = TCPConnector(limit=None)
         async with self.semaphore:
@@ -134,8 +160,19 @@ class ReqBench(object):
                 ) as session:
                 while (not self.limit or self.request_sent < self.limit) and \
                       (not self.duration or self.running_time.seconds < self.duration):
-                    tasks = [self._request(session) for _ in range(self.concurrency)]
-                    await asyncio.gather(*tasks)
+                    try:
+                        # set data from file or from params
+                        if self.file_obj:
+                            data = self._get_data_from_file()
+                        else:
+                            data = self.data
+                    except StopIteration:
+                        # go to start of file and repeat task
+                        self.file_obj.seek(0)
+                        continue
+                    except ValueError:
+                        raise UserException('Wrong file format')
+                    await self._request(session=session, data=data)
 
     def show_interrupt_message(self):
         logger.info('Tasks was interrupted by user')
@@ -193,16 +230,18 @@ if __name__ == "__main__":
             args.url,
             method=args.method,
             data=dict((d.split(':') for d in args.data)) if args.data else None,
+            json_data=args.json,
             concurrency=args.concurrency,
             auth=args.auth,
             headers=dict((h.split(':') for h in args.headers)) if args.headers else None,
             duration=args.duration,
-            limit=args.limit
+            limit=args.limit,
+            file_name=args.file
         )
         task = loop.create_task(reqbench.run())
         loop.run_until_complete(task)
     except UserException as e:
-        reqbench.show_interrupt_message()
+        reqbench.show_interrupt_message(e.message)
         task.cancel()
     except KeyboardInterrupt:
         reqbench.show_interrupt_message()

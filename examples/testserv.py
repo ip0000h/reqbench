@@ -16,9 +16,15 @@ def return_json_data():
 class SimpleJsonView(web.View):
 
     async def get(self):
+        headers = self.request.headers
+        logging.info(headers)
         return return_json_data()
 
     async def post(self):
+        data = await self.request.read()
+        headers = self.request.headers
+        logging.info(headers)
+        logging.info(data)
         return return_json_data()
 
 
