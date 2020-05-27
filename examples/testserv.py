@@ -2,6 +2,7 @@ import logging
 import random
 
 from aiohttp import web
+from aiohttp_basicauth_middleware import basic_auth_middleware
 
 
 def return_json_data():
@@ -14,7 +15,6 @@ def return_json_data():
 
 
 class SimpleJsonView(web.View):
-
     async def get(self):
         headers = self.request.headers
         logging.info(headers)
@@ -28,9 +28,22 @@ class SimpleJsonView(web.View):
         return return_json_data()
 
 
+class AuthJsonView(SimpleJsonView):
+    pass
+
+
 async def app_factory():
     app = web.Application()
     app.router.add_view('/', SimpleJsonView)
+    app.router.add_view('/auth', AuthJsonView)
+
+    app.middlewares.append(
+        basic_auth_middleware(
+            ('/auth',),
+            {'user': 'password'},
+        )
+    )
+
     return app
 
 

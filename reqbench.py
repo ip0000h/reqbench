@@ -115,7 +115,6 @@ class ReqBench(object):
             'method': self.method,
             'url': self.url
         }
-        # TODO: just use param data
         if self.data:
             rq_data['data'] = self.data
         elif self.json_data:
@@ -135,7 +134,7 @@ class ReqBench(object):
                     self.min_data_received = data_received
                 if not self.max_data_received or self.max_data_received < data_received:
                     self.max_data_received = data_received
-        except (ClientConnectionError, ClientResponseError):
+        except (ClientConnectionError, ClientResponseError, RequestException):
             self.errors += 1
         else:
             self.success += 1
