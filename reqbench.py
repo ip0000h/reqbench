@@ -17,7 +17,7 @@ _URL_METHODS = ['GET', 'DELETE', 'OPTIONS', 'HEAD']
 _DATA_METHODS = ['POST', 'PUT']
 _LOGGER_FORMAT = '%(asctime)s %(message)s'
 _DEFAULT_HEADERS = {
-    'User-Agent': 'reqbench'
+    'User-Agent': 'Reqbench'
 }
 
 logging.basicConfig(format=_LOGGER_FORMAT, datefmt='[%H:%M:%S]')
@@ -69,18 +69,11 @@ class ReqBench(object):
         self.method = method
         self.limit = limit
         self.duration = duration
-        self.data = None
-        self.json_data = None
+        self.data = data
         self.is_json_data = json_data
         if method in _URL_METHODS:
             if data:
                 self.url += '?' + urlencode(data)
-        elif method in _DATA_METHODS:
-            if json_data:
-                self.json_data = data
-            else:
-                self.data = data
-
         if file_name:
             self.file_obj = open(file_name, 'r')
         else:
@@ -115,17 +108,13 @@ class ReqBench(object):
             'method': self.method,
             'url': self.url
         }
-        if self.data:
-            rq_data['data'] = self.data
-        elif self.json_data:
-            rq_data['json'] = self.json_data
-        elif data and not self.is_json_data:
+        if data and not self.is_json_data:
             rq_data['data'] = data
         elif data and self.is_json_data:
             rq_data['json'] = data
         try:
             async with session.request(**rq_data) as response:
-                if response.status >= 400:
+                if response.status >= 500:
                     raise RequestException(response.status, 'Server error')
                 resp_data = await response.read()
                 data_received = len(resp_data)
@@ -240,11 +229,12 @@ if __name__ == "__main__":
         task = loop.create_task(reqbench.run())
         loop.run_until_complete(task)
     except UserException as e:
-        reqbench.show_interrupt_message(e.message)
-        task.cancel()
+        logging.error('Error: %s', e.message)
     except KeyboardInterrupt:
         reqbench.show_interrupt_message()
         task.cancel()
+    else:
+        reqbench.show_final_message()
     finally:
         try:
             pending_tasks = [
@@ -253,5 +243,4 @@ if __name__ == "__main__":
             loop.run_until_complete(asyncio.gather(*pending_tasks))
         except asyncio.CancelledError:
             pass
-        reqbench.show_final_message()
         loop.close()
