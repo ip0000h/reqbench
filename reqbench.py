@@ -93,6 +93,11 @@ class ReqBench(object):
         if headers:
             self.headers.update(headers)
         self.semaphore = asyncio.Semaphore(concurrency + 1)
+        self.status100 = 0
+        self.status200 = 0
+        self.status300 = 0
+        self.status400 = 0
+        self.status500 = 0
 
     @property
     def running_time(self) -> timedelta:
@@ -114,8 +119,18 @@ class ReqBench(object):
             rq_data['json'] = data
         try:
             async with session.request(**rq_data) as response:
-                if response.status >= 500:
-                    raise RequestException(response.status, 'Server error')
+                status = response.status
+                if status >= 500:
+                    self.status500 += 1
+                    raise RequestException(status, 'Server error')
+                elif status >= 400:
+                    self.status400 += 1
+                elif status >= 300:
+                    self.status300 += 1
+                elif status >= 200:
+                    self.status200 += 1
+                elif status >= 100:
+                    self.status100 += 1
                 resp_data = await response.read()
                 data_received = len(resp_data)
                 self.data_received += data_received
@@ -139,6 +154,7 @@ class ReqBench(object):
         return dict([i.split(':') for i in next(self.file_obj).rstrip().split(' ')])
 
     async def run(self):
+        self.show_start_message()
         connector = TCPConnector(limit=None)
         async with self.semaphore:
             async with ClientSession(
@@ -162,6 +178,9 @@ class ReqBench(object):
                         raise UserException('Wrong file format')
                     await self._request(session=session, data=data)
 
+    def show_start_message(self):
+        logger.info('Starting sending requests')
+
     def show_interrupt_message(self):
         logger.info('Tasks was interrupted by user')
 
@@ -173,6 +192,8 @@ class ReqBench(object):
                     self.min_data_received, self.max_data_received, self.avg_data_received)
         logger.info('Request duration time min: %s max: %s',
                     self.min_time_request, self.max_time_request)
+        logger.info('Response statuses: \n\t1XX: %s\n\t2XX: %s\n\t3XX: %s\n\t4XX: %s\n\t5XX: %s',
+                    self.status100, self.status200, self.status300, self.status400, self.status500)
         logger.info('Finished in %s', self.running_time)
 
 
