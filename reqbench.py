@@ -99,6 +99,13 @@ class ReqBench(object):
         self.status400 = 0
         self.status500 = 0
 
+    def __del__(self):
+        logger.debug('Deleting ReqBench object and closing files')
+        if self.file_obj:
+            self.file_obj.close()
+        if self.output_file_obj:
+            self.output_file_obj.close()
+
     @property
     def running_time(self) -> timedelta:
         return datetime.now() - self.time_start
