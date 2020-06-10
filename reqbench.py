@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import asyncio
 import argparse
+import json
 import logging
 import os
 from datetime import datetime, timedelta
@@ -17,7 +18,7 @@ _URL_METHODS = ['GET', 'DELETE', 'OPTIONS', 'HEAD']
 _DATA_METHODS = ['POST', 'PUT']
 _LOGGER_FORMAT = '%(asctime)s %(message)s'
 _DEFAULT_HEADERS = {
-    'User-Agent': 'reqbench'
+    'User-Agent': 'Reqbench'
 }
 
 logging.basicConfig(format=_LOGGER_FORMAT, datefmt='[%H:%M:%S]')
@@ -64,27 +65,19 @@ class ReqBench(object):
             headers: dict = None,
             limit: int = None,
             duration: int = None,
-            file_name: str = None):
+            file_name: str = None,
+            output_file_name: str = None):
         self.url = url
         self.method = method
         self.limit = limit
         self.duration = duration
-        self.data = None
-        self.json_data = None
+        self.data = data
         self.is_json_data = json_data
         if method in _URL_METHODS:
             if data:
                 self.url += '?' + urlencode(data)
-        elif method in _DATA_METHODS:
-            if json_data:
-                self.json_data = data
-            else:
-                self.data = data
-
-        if file_name:
-            self.file_obj = open(file_name, 'r')
-        else:
-            self.file_obj = None
+        self.file_obj = open(file_name, 'r') if file_name else None
+        self.output_file_obj = open(output_file_name, 'w') if output_file_name else None
         self.concurrency = concurrency
         self.time_start = datetime.now()
         self.min_time_request = None
@@ -100,6 +93,18 @@ class ReqBench(object):
         if headers:
             self.headers.update(headers)
         self.semaphore = asyncio.Semaphore(concurrency + 1)
+        self.status100 = 0
+        self.status200 = 0
+        self.status300 = 0
+        self.status400 = 0
+        self.status500 = 0
+
+    def __del__(self):
+        logger.debug('Deleting ReqBench object and closing files')
+        if self.file_obj:
+            self.file_obj.close()
+        if self.output_file_obj:
+            self.output_file_obj.close()
 
     @property
     def running_time(self) -> timedelta:
@@ -115,19 +120,34 @@ class ReqBench(object):
             'method': self.method,
             'url': self.url
         }
-        if self.data:
-            rq_data['data'] = self.data
-        elif self.json_data:
-            rq_data['json'] = self.json_data
-        elif data and not self.is_json_data:
+        if data and not self.is_json_data:
             rq_data['data'] = data
         elif data and self.is_json_data:
             rq_data['json'] = data
+        if self.output_file_obj:
+            self.output_file_obj.write(json.dumps(rq_data, indent=2))
+            self.output_file_obj.write('\n')
         try:
             async with session.request(**rq_data) as response:
-                if response.status >= 400:
-                    raise RequestException(response.status, 'Server error')
+                status = response.status
+                if self.output_file_obj:
+                    self.output_file_obj.write(json.dumps(dict(response.headers), indent=2))
+                    self.output_file_obj.write('\n')
+                if status >= 500:
+                    self.status500 += 1
+                    raise RequestException(status, 'Server error')
+                elif status >= 400:
+                    self.status400 += 1
+                elif status >= 300:
+                    self.status300 += 1
+                elif status >= 200:
+                    self.status200 += 1
+                elif status >= 100:
+                    self.status100 += 1
                 resp_data = await response.read()
+                if self.output_file_obj:
+                    self.output_file_obj.write(resp_data.decode('utf-8'))
+                    self.output_file_obj.write('\n\n')
                 data_received = len(resp_data)
                 self.data_received += data_received
                 if not self.min_data_received or self.min_data_received > data_received:
@@ -150,6 +170,7 @@ class ReqBench(object):
         return dict([i.split(':') for i in next(self.file_obj).rstrip().split(' ')])
 
     async def run(self):
+        self.show_start_message()
         connector = TCPConnector(limit=None)
         async with self.semaphore:
             async with ClientSession(
@@ -173,6 +194,9 @@ class ReqBench(object):
                         raise UserException('Wrong file format')
                     await self._request(session=session, data=data)
 
+    def show_start_message(self):
+        logger.info('Starting sending requests')
+
     def show_interrupt_message(self):
         logger.info('Tasks was interrupted by user')
 
@@ -184,6 +208,8 @@ class ReqBench(object):
                     self.min_data_received, self.max_data_received, self.avg_data_received)
         logger.info('Request duration time min: %s max: %s',
                     self.min_time_request, self.max_time_request)
+        logger.info('Response statuses: \n\t1XX: %s\n\t2XX: %s\n\t3XX: %s\n\t4XX: %s\n\t5XX: %s',
+                    self.status100, self.status200, self.status300, self.status400, self.status500)
         logger.info('Finished in %s', self.running_time)
 
 
@@ -212,6 +238,7 @@ if __name__ == "__main__":
     group_limit.add_argument('-l', '--limit', type=int, help='Limit of requests.')
     group_limit.add_argument('-d', '--duration', type=int, help='Duration in seconds.')
 
+    parser.add_argument('-O', '--output', type=str, help='output responses to file')
     parser.add_argument('-v', '--verbose', action='store_true', help='Detailed output.')
 
     args = parser.parse_args()
@@ -235,16 +262,18 @@ if __name__ == "__main__":
             headers=dict((h.split(':') for h in args.headers)) if args.headers else None,
             duration=args.duration,
             limit=args.limit,
-            file_name=args.file
+            file_name=args.file,
+            output_file_name=args.output
         )
         task = loop.create_task(reqbench.run())
         loop.run_until_complete(task)
     except UserException as e:
-        reqbench.show_interrupt_message(e.message)
-        task.cancel()
+        logging.error('Error: %s', e.message)
     except KeyboardInterrupt:
         reqbench.show_interrupt_message()
         task.cancel()
+    else:
+        reqbench.show_final_message()
     finally:
         try:
             pending_tasks = [
@@ -253,5 +282,4 @@ if __name__ == "__main__":
             loop.run_until_complete(asyncio.gather(*pending_tasks))
         except asyncio.CancelledError:
             pass
-        reqbench.show_final_message()
         loop.close()
