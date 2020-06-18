@@ -10,6 +10,8 @@ pip install .
 
 ## usage
 
+### arguments
+
 usage: reqbench.py [-h] [-m {GET,DELETE,OPTIONS,HEAD,POST,PUT}]
                    [-D DATA | -F FILE] [-j] [-c CONCURRENCY] [-a AUTH]
                    [-H HEADERS] [-l LIMIT | -d DURATION] [-v]
@@ -40,7 +42,7 @@ optional arguments:
 
   -l LIMIT, --limit LIMIT Limit of requests.
 
-  -d DURATION, --duration DURATION Duration in seconds.
+  -d DURATION, --duration DURATION Duration in milliseconds.
 
   -O OUTPUT, --output OUTPUT Output responses to file.
 
