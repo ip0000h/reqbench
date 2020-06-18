@@ -100,6 +100,7 @@ class ReqBench(object):
         self.status400 = 0
         self.status500 = 0
         self.progress_bar = None
+        self.last_progress_bar_update = 0
 
     def __del__(self):
         logger.debug('Deleting ReqBench object and closing files')
@@ -111,6 +112,10 @@ class ReqBench(object):
     @property
     def running_time(self) -> timedelta:
         return datetime.now() - self.time_start
+
+    @property
+    def running_time_ms(self) -> timedelta:
+        return int(self.running_time.total_seconds() * 1000)
 
     @property
     def avg_data_received(self) -> int:
@@ -171,7 +176,8 @@ class ReqBench(object):
             if self.limit:
                 self.progress_bar.update(1)
             else:
-                self.progress_bar.update(end_request_time - self.time_start)
+                self.progress_bar.update(self.running_time_ms - self.last_progress_bar_update)
+                self.last_progress_bar_update = self.running_time_ms
 
     def _get_data_from_file(self):
         return dict([i.split(':') for i in next(self.file_obj).rstrip().split(' ')])
@@ -181,7 +187,7 @@ class ReqBench(object):
         if self.limit:
             self.progress_bar = tqdm(desc='Requests', total=self.limit)
         else:
-            self.progress_bar = tqdm(desc='Seconds', total=self.duration)
+            self.progress_bar = tqdm(desc='Time', total=self.duration)
         connector = TCPConnector(limit=None)
         async with self.semaphore:
             async with ClientSession(
@@ -190,7 +196,7 @@ class ReqBench(object):
                     connector=connector
                 ) as session:
                 while (not self.limit or self.request_sent < self.limit) and \
-                      (not self.duration or int(self.running_time.total_seconds() * 1000000) < self.duration):
+                      (not self.duration or self.running_time_ms < self.duration):
                     try:
                         # set data from file or from params
                         if self.file_obj:
