@@ -42,4 +42,10 @@ optional arguments:
 
   -d DURATION, --duration DURATION Duration in seconds.
 
+  -O OUTPUT, --output OUTPUT Output responses to file.
+
   -v, --verbose  Detailed output.
+
+### example
+
+[![asciicast](https://asciinema.org/a/njSbhst49GhwhAmoyvhD5OOKt.svg)](https://asciinema.org/a/njSbhst49GhwhAmoyvhD5OOKt)

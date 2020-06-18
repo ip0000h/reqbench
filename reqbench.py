@@ -256,7 +256,7 @@ if __name__ == "__main__":
     group_limit.add_argument('-l', '--limit', type=int, help='Limit of requests.')
     group_limit.add_argument('-d', '--duration', type=int, help='Duration in microseconds.')
 
-    parser.add_argument('-O', '--output', type=str, help='output responses to file')
+    parser.add_argument('-O', '--output', type=str, help='Output responses to file.')
     parser.add_argument('-v', '--verbose', action='store_true', help='Detailed output.')
 
     args = parser.parse_args()
