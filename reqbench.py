@@ -12,6 +12,7 @@ from aiohttp import (BasicAuth,
                      ClientConnectionError,
                      ClientResponseError,
                      TCPConnector)
+from tqdm import tqdm
 
 
 _URL_METHODS = ['GET', 'DELETE', 'OPTIONS', 'HEAD']
@@ -98,6 +99,7 @@ class ReqBench(object):
         self.status300 = 0
         self.status400 = 0
         self.status500 = 0
+        self.progress_bar = None
 
     def __del__(self):
         logger.debug('Deleting ReqBench object and closing files')
@@ -115,7 +117,7 @@ class ReqBench(object):
         return int(self.data_received / self.request_sent)
 
     async def _request(self, session: ClientSession, data: dict):
-        start = datetime.now()
+        start_request_time = datetime.now()
         rq_data = {
             'method': self.method,
             'url': self.url
@@ -160,17 +162,26 @@ class ReqBench(object):
             self.success += 1
         finally:
             self.request_sent += 1
-            duration = datetime.now() - start
+            end_request_time = datetime.now()
+            duration = datetime.now() - start_request_time
             if not self.min_time_request or self.min_time_request > duration:
                 self.min_time_request = duration
             if not self.max_time_request or self.max_time_request < duration:
                 self.max_time_request = duration
+            if self.limit:
+                self.progress_bar.update(1)
+            else:
+                self.progress_bar.update(end_request_time - self.time_start)
 
     def _get_data_from_file(self):
         return dict([i.split(':') for i in next(self.file_obj).rstrip().split(' ')])
 
     async def run(self):
         self.show_start_message()
+        if self.limit:
+            self.progress_bar = tqdm(desc='Requests', total=self.limit)
+        else:
+            self.progress_bar = tqdm(desc='Seconds', total=self.duration)
         connector = TCPConnector(limit=None)
         async with self.semaphore:
             async with ClientSession(
@@ -179,7 +190,7 @@ class ReqBench(object):
                     connector=connector
                 ) as session:
                 while (not self.limit or self.request_sent < self.limit) and \
-                      (not self.duration or self.running_time.seconds < self.duration):
+                      (not self.duration or int(self.running_time.total_seconds() * 1000000) < self.duration):
                     try:
                         # set data from file or from params
                         if self.file_obj:
@@ -193,6 +204,7 @@ class ReqBench(object):
                     except ValueError:
                         raise UserException('Wrong file format')
                     await self._request(session=session, data=data)
+        self.progress_bar.close()
 
     def show_start_message(self):
         logger.info('Starting sending requests')
@@ -236,7 +248,7 @@ if __name__ == "__main__":
 
     group_limit = parser.add_mutually_exclusive_group()
     group_limit.add_argument('-l', '--limit', type=int, help='Limit of requests.')
-    group_limit.add_argument('-d', '--duration', type=int, help='Duration in seconds.')
+    group_limit.add_argument('-d', '--duration', type=int, help='Duration in microseconds.')
 
     parser.add_argument('-O', '--output', type=str, help='output responses to file')
     parser.add_argument('-v', '--verbose', action='store_true', help='Detailed output.')
