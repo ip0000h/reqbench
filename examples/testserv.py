@@ -8,7 +8,7 @@ from aiohttp_basicauth_middleware import basic_auth_middleware
 from constants import HTTP_STATUSES
 
 
-def return_json_data(status: int = None, random_data: bool = False):
+def return_json_data(status: int = None, random_data: bool = False) -> web.Response:
     data = {
         'status': 'OK' if status is None else HTTP_STATUSES[status]
     }
