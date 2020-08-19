@@ -42,8 +42,6 @@ optional arguments:
 
   -l LIMIT, --limit LIMIT Limit of requests.
 
-  -d DURATION, --duration DURATION Duration in milliseconds.
-
   -O OUTPUT, --output OUTPUT Output responses to file.
 
   -v, --verbose  Detailed output.
