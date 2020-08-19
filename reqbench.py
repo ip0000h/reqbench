@@ -14,18 +14,19 @@ from aiohttp import (BasicAuth,
                      TCPConnector)
 from tqdm import tqdm
 
-
-_URL_METHODS = ['GET', 'DELETE', 'OPTIONS', 'HEAD']
-_DATA_METHODS = ['POST', 'PUT']
-_LOGGER_FORMAT = '%(asctime)s %(message)s'
-_DEFAULT_HEADERS = {
-    'User-Agent': 'Reqbench'
-}
-
+_LOGGER_FORMAT = '[%(levelname)s] - %(asctime)s - %(message)s'
 logging.basicConfig(format=_LOGGER_FORMAT, datefmt='[%H:%M:%S]')
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+
+_URL_METHODS = ['GET', 'DELETE', 'OPTIONS', 'HEAD']
+_DATA_METHODS = ['POST', 'PUT']
+
+_DEFAULT_HEADERS = {
+    'User-Agent': 'Reqbench'
+}
 
 
 class UserException(Exception):
@@ -71,7 +72,6 @@ class ReqBench(object):
         self.url = url
         self.method = method
         self.limit = limit
-        self.duration = duration
         self.data = data
         self.is_json_data = json_data
         if method in _URL_METHODS:
@@ -184,19 +184,16 @@ class ReqBench(object):
 
     async def run(self):
         self.show_start_message()
-        if self.limit:
-            self.progress_bar = tqdm(desc='Requests', total=self.limit)
-        else:
-            self.progress_bar = tqdm(desc='Time', total=self.duration)
+        self.progress_bar = tqdm(desc='Requests', total=self.limit)
         connector = TCPConnector(limit=None)
+        tasks = []
         async with self.semaphore:
             async with ClientSession(
                     auth=self.auth,
                     headers=self.headers,
                     connector=connector
                 ) as session:
-                while (not self.limit or self.request_sent < self.limit) and \
-                      (not self.duration or self.running_time_ms < self.duration):
+                for _ in range(self.limit):
                     try:
                         # set data from file or from params
                         if self.file_obj:
@@ -209,13 +206,15 @@ class ReqBench(object):
                         continue
                     except ValueError:
                         raise UserException('Wrong file format')
-                    await self._request(session=session, data=data)
+                    tasks.append(self._request(session=session, data=data))
+                await asyncio.gather(*tasks)
         self.progress_bar.close()
 
     def show_start_message(self):
         logger.info('Starting sending requests')
 
     def show_interrupt_message(self):
+        self.progress_bar.close()
         logger.info('Tasks was interrupted by user')
 
     def show_final_message(self):
@@ -254,7 +253,6 @@ if __name__ == "__main__":
 
     group_limit = parser.add_mutually_exclusive_group()
     group_limit.add_argument('-l', '--limit', type=int, help='Limit of requests.')
-    group_limit.add_argument('-d', '--duration', type=int, help='Duration in microseconds.')
 
     parser.add_argument('-O', '--output', type=str, help='Output responses to file.')
     parser.add_argument('-v', '--verbose', action='store_true', help='Detailed output.')
@@ -270,34 +268,28 @@ if __name__ == "__main__":
         if args.file:
             if not os.path.exists(args.file):
                 raise UserException('Data file is not found')
-        reqbench = ReqBench(
-            args.url,
-            method=args.method,
-            data=dict((d.split(':') for d in args.data)) if args.data else None,
-            json_data=args.json,
-            concurrency=args.concurrency,
-            auth=args.auth,
-            headers=dict((h.split(':') for h in args.headers)) if args.headers else None,
-            duration=args.duration,
-            limit=args.limit,
-            file_name=args.file,
-            output_file_name=args.output
-        )
-        task = loop.create_task(reqbench.run())
-        loop.run_until_complete(task)
     except UserException as e:
         logging.error('Error: %s', e.message)
+
+    reqbench = ReqBench(
+        args.url,
+        method=args.method,
+        data=dict((d.split(':') for d in args.data)) if args.data else None,
+        json_data=args.json,
+        concurrency=args.concurrency,
+        auth=args.auth,
+        headers=dict((h.split(':') for h in args.headers)) if args.headers else None,
+        limit=args.limit,
+        file_name=args.file,
+        output_file_name=args.output
+    )
+    task = loop.create_task(reqbench.run())
+    try:
+        loop.run_until_complete(task)
     except KeyboardInterrupt:
         reqbench.show_interrupt_message()
         task.cancel()
     else:
         reqbench.show_final_message()
     finally:
-        try:
-            pending_tasks = [
-                task for task in asyncio.Task.all_tasks() if not task.done()
-            ]
-            loop.run_until_complete(asyncio.gather(*pending_tasks))
-        except asyncio.CancelledError:
-            pass
         loop.close()
