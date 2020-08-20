@@ -207,7 +207,8 @@ class ReqBench(object):
                     except ValueError:
                         raise UserException('Wrong file format')
                     tasks.append(self._request(session=session, data=data))
-                await asyncio.gather(*tasks)
+                for i in range(0, len(tasks), 500):
+                    await asyncio.gather(*tasks[i:i + 500])
         self.progress_bar.close()
 
     def show_start_message(self):
