@@ -1,18 +1,22 @@
 #!/usr/bin/env python
 import asyncio
 import argparse
+from collections import defaultdict
 import json
 import logging
 import os
+import sys
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
-from aiohttp import (BasicAuth,
+from aiohttp import (http_exceptions,
+                     BasicAuth,
                      ClientSession,
                      ClientConnectionError,
                      ClientResponseError,
                      TCPConnector)
 from tqdm import tqdm
+
 
 _LOGGER_FORMAT = '[%(levelname)s] - %(asctime)s - %(message)s'
 logging.basicConfig(format=_LOGGER_FORMAT, datefmt='[%H:%M:%S]')
@@ -54,8 +58,10 @@ class RequestException(Exception):
                + (f', params: {self.params}' if self.params else '')
 
 
-class ReqBench(object):
-
+class ReqBench():
+    """
+    Main class for application
+    """
     def __init__(
             self,
             url: str,
@@ -66,7 +72,6 @@ class ReqBench(object):
             auth: str = None,
             headers: dict = None,
             limit: int = None,
-            duration: int = None,
             file_name: str = None,
             output_file_name: str = None):
         self.url = url
@@ -94,11 +99,7 @@ class ReqBench(object):
         if headers:
             self.headers.update(headers)
         self.semaphore = asyncio.Semaphore(concurrency + 1)
-        self.status100 = 0
-        self.status200 = 0
-        self.status300 = 0
-        self.status400 = 0
-        self.status500 = 0
+        self.statuses = defaultdict(int)
         self.progress_bar = None
         self.last_progress_bar_update = 0
 
@@ -140,34 +141,37 @@ class ReqBench(object):
                 if self.output_file_obj:
                     self.output_file_obj.write(json.dumps(dict(response.headers), indent=2))
                     self.output_file_obj.write('\n')
+                self.statuses[status] += 1
                 if status >= 500:
-                    self.status500 += 1
                     raise RequestException(status, 'Server error')
-                elif status >= 400:
-                    self.status400 += 1
-                elif status >= 300:
-                    self.status300 += 1
+                # read data only if status 2xx
                 elif status >= 200:
-                    self.status200 += 1
-                elif status >= 100:
-                    self.status100 += 1
-                resp_data = await response.read()
-                if self.output_file_obj:
-                    self.output_file_obj.write(resp_data.decode('utf-8'))
-                    self.output_file_obj.write('\n\n')
-                data_received = len(resp_data)
-                self.data_received += data_received
-                if not self.min_data_received or self.min_data_received > data_received:
-                    self.min_data_received = data_received
-                if not self.max_data_received or self.max_data_received < data_received:
-                    self.max_data_received = data_received
-        except (ClientConnectionError, ClientResponseError, RequestException):
+                    resp_data = await response.read()
+                    if self.output_file_obj:
+                        self.output_file_obj.write(resp_data.decode('utf-8'))
+                        self.output_file_obj.write('\n\n')
+                    data_received = len(resp_data)
+                    self.data_received += data_received
+                    if not self.min_data_received or self.min_data_received > data_received:
+                        self.min_data_received = data_received
+                    if not self.max_data_received or self.max_data_received < data_received:
+                        self.max_data_received = data_received
+        except (
+            ClientConnectionError,
+            ClientResponseError,
+            http_exceptions.HttpProcessingError
+        ) as e:
+            logger.error('HTTP request error: %s', e.message)
+            self.errors += 1
+        except RequestException:
+            self.errors += 1
+        except Exception as e:
+            logger.error('Unknown request error: %s', e.message)
             self.errors += 1
         else:
             self.success += 1
         finally:
             self.request_sent += 1
-            end_request_time = datetime.now()
             duration = datetime.now() - start_request_time
             if not self.min_time_request or self.min_time_request > duration:
                 self.min_time_request = duration
@@ -179,8 +183,10 @@ class ReqBench(object):
                 self.progress_bar.update(self.running_time_ms - self.last_progress_bar_update)
                 self.last_progress_bar_update = self.running_time_ms
 
-    def _get_data_from_file(self):
-        return dict([i.split(':') for i in next(self.file_obj).rstrip().split(' ')])
+    def _get_data_from_file(self) -> dict:
+        return dict(
+            [i.split(':') for i in next(self.file_obj).rstrip().split(' ')]
+        )
 
     async def run(self):
         self.show_start_message()
@@ -207,8 +213,8 @@ class ReqBench(object):
                     except ValueError:
                         raise UserException('Wrong file format')
                     tasks.append(self._request(session=session, data=data))
-                for i in range(0, len(tasks), 500):
-                    await asyncio.gather(*tasks[i:i + 500])
+                for i in range(0, len(tasks), 1000):
+                    await asyncio.gather(*tasks[i: i + 1000])
         self.progress_bar.close()
 
     def show_start_message(self):
@@ -226,12 +232,13 @@ class ReqBench(object):
                     self.min_data_received, self.max_data_received, self.avg_data_received)
         logger.info('Request duration time min: %s max: %s',
                     self.min_time_request, self.max_time_request)
-        logger.info('Response statuses: \n\t1XX: %s\n\t2XX: %s\n\t3XX: %s\n\t4XX: %s\n\t5XX: %s',
-                    self.status100, self.status200, self.status300, self.status400, self.status500)
+        statuses_string = "".join([f"\n\t{status_code}: {count}" for status_code, count in self.statuses.items()])
+        logger.info('Response statuses: %s', statuses_string)
         logger.info('Finished in %s', self.running_time)
 
 
 if __name__ == "__main__":
+    assert sys.version_info >= (3, 7)
     parser = argparse.ArgumentParser(description='Reqbench is a tool for load testing web apps.')
     parser.add_argument('url', metavar='URL', type=str)
 
